@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elite VPN Store</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <style>
+        :root {
+            --primary: #0088cc;
+            --dark-bg: #1c1c1e;
+            --card-bg: #2c2c2e;
+            --text-main: #ffffff;
+            --text-dim: #a1a1a6;
+            --accent: #34c759;
+        }
+
+        body {
+            font-family: 'SF Pro Display', -apple-system, sans-serif;
+            background: var(--dark-bg);
+            color: var(--text-main);
+            margin: 0;
+            padding-bottom: 80px;
+            overflow-x: hidden;
+        }
+
+        /* --- Loading Screen --- */
+        #loading-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--dark-bg);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 9999;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            border: 5px solid rgba(255,255,255,0.1);
+            border-top: 5px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* --- Header & Profile --- */
+        .header {
+            background: var(--card-bg);
+            padding: 20px;
+            border-bottom-left-radius: 20px;
+            border-bottom-right-radius: 20px;
+            text-align: left;
+            display: flex; align-items: center; gap: 15px;
+        }
+        .profile-img {
+            width: 50px; height: 50px;
+            border-radius: 50%;
+            background: var(--primary);
+            display: flex; justify-content: center; align-items: center;
+            font-weight: bold; font-size: 20px;
+        }
+
+        /* --- UI Elements --- */
+        .content-section { display: none; padding: 15px; animation: slideUp 0.4s ease; }
+        .active-section { display: block; }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .price-tag { color: var(--accent); font-weight: bold; font-size: 18px; }
+
+        .btn {
+            background: var(--primary);
+            color: white; border: none;
+            padding: 12px; border-radius: 10px;
+            width: 100%; font-weight: 600;
+            cursor: pointer; transition: 0.3s;
+        }
+        .btn:active { transform: scale(0.98); }
+
+        /* --- Navigation --- */
+        .nav-bar {
+            position: fixed; bottom: 0; width: 100%;
+            background: rgba(44, 44, 46, 0.95);
+            backdrop-filter: blur(10px);
+            display: flex; justify-content: space-around;
+            padding: 12px 0; border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .nav-item { color: var(--text-dim); font-size: 11px; text-align: center; flex: 1; }
+        .nav-item.active { color: var(--primary); }
+        .nav-icon { font-size: 20px; display: block; margin-bottom: 4px; }
+
+        /* Admin Dashboard Overlay */
+        #admin-view {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--dark-bg); z-index: 2000;
+            display: none; padding: 20px; overflow-y: auto;
+        }
+        input {
+            background: #3a3a3c; border: none; color: white;
+            padding: 12px; margin: 10px 0; width: 100%; border-radius: 8px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <p style="margin-top: 15px; color: var(--text-dim);">Securing Connection...</p>
+    </div>
+
+    <div class="header">
+        <div id="user-pfp" class="profile-img">?</div>
+        <div>
+            <div style="font-size: 14px; color: var(--text-dim);">Welcome back,</div>
+            <div id="user-name" style="font-size: 18px; font-weight: bold;">User</div>
+        </div>
+    </div>
+
+    <div id="store-sec" class="content-section active-section">
+        <h3 style="margin-left: 5px;">🔥 Available Plans</h3>
+        <div id="product-list"></div>
+        <button id="admin-btn" class="btn" style="background: #eb445a; display:none; margin-top:20px;" onclick="showAdminPanel()">🛠 Admin Dashboard</button>
+    </div>
+
+    <div id="orders-sec" class="content-section">
+        <h3>📦 My Orders</h3>
+        <div id="my-orders-list">No orders found.</div>
+    </div>
+
+    <div id="help-sec" class="content-section">
+        <div class="card">
+            <h3>Need Help?</h3>
+            <p style="color: var(--text-dim);">Contact our support for any issues regarding your VPN subscription.</p>
+            <button class="btn" onclick="window.location.href='https://t.me/NibDeveloper'">Chat with Admin</button>
+        </div>
+    </div>
+
+    <div id="admin-view">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2>Admin Panel</h2>
+            <button onclick="hideAdminPanel()" style="background:none; border:none; color:var(--primary); font-size:16px;">Close</button>
+        </div>
+        <div class="card">
+            <h4>Add New Product</h4>
+            <input type="text" id="new-name" placeholder="VPN Name">
+            <input type="text" id="new-price" placeholder="Price (e.g. ৳ 105)">
+            <button class="btn" onclick="addNewProduct()">Save Product</button>
+        </div>
+        <h4>Orders Management</h4>
+        <div id="admin-pending-orders"></div>
+    </div>
+
+    <div class="nav-bar">
+        <div class="nav-item active" id="nav-store" onclick="changeTab('store')"><span class="nav-icon">🛒</span>Store</div>
+        <div class="nav-item" id="nav-orders" onclick="changeTab('orders')"><span class="nav-icon">⏳</span>Orders</div>
+        <div class="nav-item" id="nav-help" onclick="changeTab('help')"><span class="nav-icon">💬</span>Help</div>
+    </div>
+
+    <script>
+        // --- Firebase Config ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDZQHw4-DdUdDmJXcuK_88JrJxv35FfYeY",
+            authDomain: "vpn-store-s26x.firebaseapp.com",
+            databaseURL: "https://vpn-store-s26x-default-rtdb.firebaseio.com",
+            projectId: "vpn-store-s26x",
+            storageBucket: "vpn-store-s26x.firebasestorage.app",
+            messagingSenderId: "373050662329",
+            appId: "1:373050662329:web:b3d02424ef0986d6abea68"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // --- Telegram Integration ---
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        const user = tg.initDataUnsafe.user || { id: 0, first_name: "Guest" };
+
+        // Profile Update
+        document.getElementById('user-name').innerText = user.first_name;
+        document.getElementById('user-pfp').innerText = user.first_name.charAt(0);
+
+        const ADMIN_ID = 12345678; // <--- APNAR TELEGRAM ID EKHANE BOSHAN
+
+        // --- Functions ---
+        window.onload = () => {
+            setTimeout(() => {
+                document.getElementById('loading-screen').style.display = 'none';
+                loadProducts();
+            }, 2000);
+        };
+
+        function changeTab(tab) {
+            document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active-section'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById(tab + '-sec').classList.add('active-section');
+            document.getElementById('nav-' + tab).classList.add('active');
+            if(tab === 'orders') loadMyOrders();
+        }
+
+        function loadProducts() {
+            db.ref('products').on('value', snap => {
+                const list = document.getElementById('product-list');
+                list.innerHTML = '';
+                snap.forEach(child => {
+                    const p = child.val();
+                    list.innerHTML += `
+                        <div class="card">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div><strong style="font-size:18px;">${p.name}</strong><br><span style="color:var(--text-dim); font-size:12px;">Warranty Included ✅</span></div>
+                                <div class="price-tag">${p.price}</div>
+                            </div>
+                            <button class="btn" style="margin-top:15px;" onclick="buyVpn('${child.key}','${p.name}')">Buy Now</button>
+                        </div>`;
+                });
+                if(user.id == ADMIN_ID) document.getElementById('admin-btn').style.display = 'block';
+            });
+        }
+
+        function buyVpn(key, name) {
+            const trx = prompt(`Order for ${name}. Enter your Transaction ID:`);
+            if(trx) {
+                db.ref('orders').push({ uid: user.id, uName: user.first_name, vpn: name, trx: trx, status: 'Pending' });
+                tg.showAlert("Order Placed Successfully!");
+            }
+        }
+
+        function loadMyOrders() {
+            db.ref('orders').orderByChild('uid').equalTo(user.id).on('value', snap => {
+                const list = document.getElementById('my-orders-list');
+                list.innerHTML = snap.exists() ? '' : 'No orders yet.';
+                snap.forEach(child => {
+                    const o = child.val();
+                    list.innerHTML += `
+                        <div class="card">
+                            <div style="display:flex; justify-content:space-between;">
+                                <strong>${o.vpn}</strong>
+                                <span style="color:${o.status==='Pending'?'#ff9500':'#34c759'}">${o.status}</span>
+                            </div>
+                            <small style="color:var(--text-dim);">Trx: ${o.trx}</small>
+                            ${o.creds ? `<div style="background:#3a3a3c; padding:10px; border-radius:8px; margin-top:10px; border-left:4px solid var(--primary); font-family:monospace;">${o.creds}</div>` : ''}
+                        </div>`;
+                });
+            });
+        }
+
+        // Admin Logics
+        function showAdminPanel() { document.getElementById('admin-view').style.display = 'block'; loadAdminOrders(); }
+        function hideAdminPanel() { document.getElementById('admin-view').style.display = 'none'; }
+
+        function addNewProduct() {
+            const name = document.getElementById('new-name').value;
+            const price = document.getElementById('new-price').value;
+            if(name && price) { db.ref('products').push({ name, price }); alert("Product Added!"); }
+        }
+
+        function loadAdminOrders() {
+            db.ref('orders').on('value', snap => {
+                const list = document.getElementById('admin-pending-orders');
+                list.innerHTML = '';
+                snap.forEach(child => {
+                    const o = child.val();
+                    if(o.status === 'Pending') {
+                        list.innerHTML += `
+                            <div class="card">
+                                <p>${o.uName} - ${o.vpn}</p>
+                                <input type="text" id="creds-${child.key}" placeholder="Email:Password">
+                                <button class="btn" onclick="approveOrder('${child.key}')">Approve & Deliver</button>
+                            </div>`;
+                    }
+                });
+            });
+        }
+
+        function approveOrder(key) {
+            const creds = document.getElementById('creds-'+key).value;
+            if(creds) db.ref('orders/'+key).update({ status: 'Delivered', creds: creds });
+        }
+    </script>
+</body>
+</html>
